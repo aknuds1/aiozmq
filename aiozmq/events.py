@@ -7,11 +7,12 @@ import zmq
 
 from asyncio.unix_events import SelectorEventLoop, SafeChildWatcher
 from asyncio.transports import _FlowControlMixin
-from collections import deque, Iterable, Set
-from ipaddress import ip_address
+from collections import deque, Iterable
 
 from .selector import ZmqSelector
 from .interface import ZmqTransport
+from .utils import _EndpointsSet
+from .monitor import _FallbackMonitor
 
 
 __all__ = ['ZmqEventLoop', 'ZmqEventLoopPolicy']
@@ -122,28 +123,6 @@ class ZmqEventLoop(SelectorEventLoop):
             raise
 
 
-class _EndpointsSet(Set):
-
-    __slots__ = ('_collection',)
-
-    def __init__(self, collection):
-        self._collection = collection
-
-    def __len__(self):
-        return len(self._collection)
-
-    def __contains__(self, endpoint):
-        return endpoint in self._collection
-
-    def __iter__(self):
-        return iter(self._collection)
-
-    def __repr__(self):
-        return '{' + ', '.join(sorted(self._collection)) + '}'
-
-    __str__ = __repr__
-
-
 class _ZmqTransportImpl(ZmqTransport, _FlowControlMixin):
 
     _TCP_RE = re.compile('^tcp://(.+):(\d+)|\*$')
@@ -158,9 +137,8 @@ class _ZmqTransportImpl(ZmqTransport, _FlowControlMixin):
         self._closing = False
         self._buffer = deque()
         self._buffer_size = 0
-        self._bindings = set()
-        self._connections = set()
         self._subscriptions = set()
+        self._monitor = _FallbackMonitor(loop, self)
 
         self._loop.add_reader(self._zmq_sock, self._read_ready)
         self._loop.call_soon(self._protocol.connection_made, self)
@@ -310,83 +288,22 @@ class _ZmqTransportImpl(ZmqTransport, _FlowControlMixin):
         return self._buffer_size
 
     def bind(self, endpoint):
-        fut = asyncio.Future(loop=self._loop)
-        try:
-            if not isinstance(endpoint, str):
-                raise TypeError('endpoint should be str, got {!r}'
-                                .format(endpoint))
-            try:
-                self._zmq_sock.bind(endpoint)
-                real_endpoint = self.getsockopt(zmq.LAST_ENDPOINT)
-            except zmq.ZMQError as exc:
-                raise OSError(exc.errno, exc.strerror) from exc
-        except Exception as exc:
-            fut.set_exception(exc)
-        else:
-            self._bindings.add(real_endpoint)
-            fut.set_result(real_endpoint)
-        return fut
+        return self._monitor.bind(endpoint)
 
     def unbind(self, endpoint):
-        fut = asyncio.Future(loop=self._loop)
-        try:
-            if not isinstance(endpoint, str):
-                raise TypeError('endpoint should be str, got {!r}'
-                                .format(endpoint))
-            try:
-                self._zmq_sock.unbind(endpoint)
-            except zmq.ZMQError as exc:
-                raise OSError(exc.errno, exc.strerror) from exc
-            else:
-                self._bindings.discard(endpoint)
-        except Exception as exc:
-            fut.set_exception(exc)
-        else:
-            fut.set_result(None)
-        return fut
+        return self._monitor.unbind(endpoint)
 
     def bindings(self):
-        return _EndpointsSet(self._bindings)
+        return self._monitor.bindings()
 
     def connect(self, endpoint):
-        fut = asyncio.Future(loop=self._loop)
-        try:
-            if not isinstance(endpoint, str):
-                raise TypeError('endpoint should be str, got {!r}'
-                                .format(endpoint))
-            match = self._TCP_RE.match(endpoint)
-            if match:
-                ip_address(match.group(1))  # check for correct IPv4 or IPv6
-            try:
-                self._zmq_sock.connect(endpoint)
-            except zmq.ZMQError as exc:
-                raise OSError(exc.errno, exc.strerror) from exc
-        except Exception as exc:
-            fut.set_exception(exc)
-        else:
-            self._connections.add(endpoint)
-            fut.set_result(endpoint)
-        return fut
+        return self._monitor.connect(endpoint)
 
     def disconnect(self, endpoint):
-        fut = asyncio.Future(loop=self._loop)
-        try:
-            if not isinstance(endpoint, str):
-                raise TypeError('endpoint should be str, got {!r}'
-                                .format(endpoint))
-            try:
-                self._zmq_sock.disconnect(endpoint)
-            except zmq.ZMQError as exc:
-                raise OSError(exc.errno, exc.strerror) from exc
-        except Exception as exc:
-            fut.set_exception(exc)
-        else:
-            self._connections.discard(endpoint)
-            fut.set_result(None)
-        return fut
+        return self._monitor.disconnect(endpoint)
 
     def connections(self):
-        return _EndpointsSet(self._connections)
+        return self._monitor.connections()
 
     def subscribe(self, value):
         if self._zmq_type != zmq.SUB:
