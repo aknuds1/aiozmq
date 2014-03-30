@@ -255,6 +255,8 @@ class _ZmqTransportImpl(ZmqTransport, _FlowControlMixin):
         finally:
             self._zmq_sock.close()
             self._zmq_sock = None
+            self._monitor.close()
+            self._monitor = None
             self._protocol = None
             self._loop = None
 
