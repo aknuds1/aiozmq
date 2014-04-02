@@ -11,6 +11,9 @@ from ipaddress import ip_address
 from .util import _EndpointsSet
 
 
+EVENT_NAMES = {getattr(zmq, k): k for k in dir(zmq) if k.startswith('EVENT_')}
+
+
 class AbstractMonitor(metaclass=abc.ABCMeta):
     """XXX"""
 
@@ -143,13 +146,17 @@ class _TrueMonitor(_FallbackMonitor):
     def __init__(self, loop, transport):
         super().__init__(loop, transport)
 
-        self._monitor_sock = self._zmq_sock.get_monitor_socket(self.EVENTS)
+        self._monitor_sock = self._zmq_sock.get_monitor_socket()
         self._loop.add_reader(self._monitor_sock, self._read_ready)
         self._waiters = {}
 
     def _read_ready(self):
         try:
             try:
+                ready = self._monitor_sock.getsockopt(zmq.EVENTS)
+                if ready != zmq.POLLIN:
+                    print('!', end='')
+                    return
                 bdata, bendpoint = self._monitor_sock.recv_multipart(
                     zmq.NOBLOCK)
             except zmq.ZMQError as exc:
@@ -159,10 +166,14 @@ class _TrueMonitor(_FallbackMonitor):
                     raise OSError(exc.errno, exc.strerror) from exc
             else:
                 event, fd = self.EVENT_STRUCT.unpack(bdata)
-                name = self._find_sockname(fd)
                 # value = self.EVENT_STRUCT.unpack(bvalue)
                 # FIXME: actually should be fsdecode
                 endpoint = bendpoint.decode('utf-8')
+                print(EVENT_NAMES[event], fd, endpoint)
+                if event != zmq.EVENT_CONNECTED:
+                    return
+                #name = self._find_sockname(fd)
+                #print(name)
                 fut = self._waiters.pop(endpoint, None)
                 if fut is None:
                     self._loop.call_exception_handler({
