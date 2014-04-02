@@ -12,7 +12,7 @@ from collections import deque, Iterable
 from .selector import ZmqSelector
 from .interface import ZmqTransport
 from .utils import _EndpointsSet
-from .monitor import _FallbackMonitor
+from .monitor import _FallbackMonitor, _TrueMonitor
 
 
 __all__ = ['ZmqEventLoop', 'ZmqEventLoopPolicy']
@@ -138,7 +138,9 @@ class _ZmqTransportImpl(ZmqTransport, _FlowControlMixin):
         self._buffer = deque()
         self._buffer_size = 0
         self._subscriptions = set()
-        self._monitor = _FallbackMonitor(loop, self)
+        #self._monitor = _FallbackMonitor(loop, self)
+        _FallbackMonitor
+        self._monitor = _TrueMonitor(loop, self)
 
         self._loop.add_reader(self._zmq_sock, self._read_ready)
         self._loop.call_soon(self._protocol.connection_made, self)
