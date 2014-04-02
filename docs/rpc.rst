@@ -11,22 +11,22 @@
 Intro
 -----
 
-While :ref:`core API <aiozmq-core>` provides core support for
-:term:`ZeroMQ` transports an :term:`End User <enduser>` usually needs for
+While :ref:`core API <aiozmq-core>` provides a core support for
+:term:`ZeroMQ` transports, the :term:`End User <enduser>` may need
 some high-level API.
 
 Thus we have the *aiozmq.rpc* module for Remote Procedure Calls.
 
 The main goal of the module is to provide *easy-to-use interface* for
-calling some method from remote process (that processes may be
-have runned on other host).
+calling some method from the remote process (which can be
+running on the other host).
 
-:term:`ZeroMQ` itself gives handy sockets but says nothing about RPC.
+:term:`ZeroMQ` itself gives some handy sockets but says nothing about RPC.
 
-In other hand this module provides *human* API but it is not
+On the other hand, this module provides *human* API, but it is not
 compatible with *other implementations*.
 
-If you need to support custor protocol over :term:`ZeroMQ` layer
+If you need to support a custom protocol over :term:`ZeroMQ` layer,
 please feel free to build your own implementation on top of the
 :ref:`core primitives <aiozmq-core>`.
 
@@ -36,9 +36,9 @@ The :mod:`aiozmq.rpc` supports three pairs of communications:
    * :ref:`aiozmq-rpc-pubsub`
 
 .. warning:: :mod:`aiozmq.rpc` module is **optional** and requires
-   :term:`msgpack`. You can install *msgpack-python* by::
+   :term:`msgpack`. You can install *msgpack-python* by executing::
 
-       pip3 install msgpack-python
+       pip3 install msgpack-python\>=0.4.0
 
 
 .. _aiozmq-rpc-rpc:
@@ -46,19 +46,19 @@ The :mod:`aiozmq.rpc` supports three pairs of communications:
 Request-Reply
 -------------
 
-This is **Remote Procedure Call** pattern itself. Client calls remote
-function on server and waits for returned value. If remote function
-raises exception that exception instance raises on client side also.
+This is a **Remote Procedure Call** pattern itself. Client calls a remote
+function on server and waits for the returned value. If the remote function
+raises an exception, that exception instance is also raised on the client side.
 
 Let's assume we have *N* clients bound to *M* servers.  Any client can
-connect to several servers and any server can listen multiple
+connect to several servers and any server can listen to multiple
 *endpoints*.
 
-When client sends a message the message will be delivered to any server
+When client sends a message, the message will be delivered to any server
 that is ready (doesn't processes another message).
 
-When server sends reply with result of remote call back the result is
-routed to client that sent the request.
+When the server sends a reply with the result of the remote call back, the result is
+routed to the client that has sent the request originally.
 
 This pair uses *DEALER*/*ROUTER* :term:`ZeroMQ` sockets.
 
@@ -127,8 +127,8 @@ The basic usage is::
        values to *connect* and *bind* parameters.
 
 
-.. function:: serve_rpc(handler, *, connect=None, bind=None, loop=None, \
-                        translation_table=None)
+.. function:: serve_rpc(handler, *, bind=None, connect=None, loop=None, \
+                        log_exceptions=False, translation_table=None)
 
     A :ref:`coroutine<coroutine>` that creates and connects/binds *RPC*
     server instance.
@@ -141,6 +141,11 @@ The basic usage is::
        an object which processes incoming RPC calls.
 
       Usually you like to pass :class:`AttrHandler` instance.
+
+    :param bool log_exceptions:
+       log exceptions from remote calls if *True*
+
+       .. seealso:: :ref:`aiozmq-rpc-log-exceptions`
 
     :param dict translation_table:
        an optional table for custom value translators.
@@ -155,23 +160,27 @@ The basic usage is::
        :meth:`aiozmq.ZmqEventLoop.create_zmq_connection` for valid
        values for *connect* and *bind* parameters.
 
+    .. versionchanged:: 0.2
+       Added *log_exceptions* parameter.
+
 .. _aiozmq-rpc-pushpull:
 
 Push-Pull
 ---------
 
-This is **Notify** aka **Pipeline** pattern. Client calls remote function
-on server and **doesn't** wait for result. If a *remote function call*
-raises an exception the exception is only **logged** at server side.  Client
-**cannot** get any information about *processing the remote call on server*.
+This is a **Notify** aka **Pipeline** pattern. Client calls a remote
+function on the server and **doesn't** wait for the result. If a
+*remote function call* raises an exception, this exception is only
+**logged** at the server side.  Client **cannot** get any information
+about *processing the remote call on server*.
 
 Thus this is **one-way** communication: **fire and forget**.
 
-Let's assume we have *N* clients bound to *M* servers.  Any client can
-connect to several servers and any server can listen multiple
+Let's assume that we have *N* clients bound to *M* servers.  Any client can
+connect to several servers and any server can listen to multiple
 *endpoints*.
 
-When client sends a message the message will be delivered to any server
+When client sends a message, the message will be delivered to any server
 that is *ready* (doesn't processes another message).
 
 That's all.
@@ -231,7 +240,7 @@ The basic usage is::
 
 
 .. function:: serve_pipeline(handler, *, connect=None, bind=None, loop=None, \
-                        translation_table=None)
+                        log_exceptions=False, translation_table=None)
 
     A :ref:`coroutine<coroutine>` that creates and connects/binds *pipeline*
     server instance.
@@ -244,6 +253,11 @@ The basic usage is::
        an object which processes incoming *pipeline* calls.
 
       Usually you like to pass :class:`AttrHandler` instance.
+
+    :param bool log_exceptions:
+       log exceptions from remote calls if *True*
+
+       .. seealso:: :ref:`aiozmq-rpc-log-exceptions`
 
     :param dict translation_table:
        an optional table for custom value translators.
@@ -258,6 +272,9 @@ The basic usage is::
        :meth:`aiozmq.ZmqEventLoop.create_zmq_connection` for valid
        values for *connect* and *bind* parameters.
 
+    .. versionchanged:: 0.2
+       Added *log_exceptions* parameter.
+
 
 .. _aiozmq-rpc-pubsub:
 
@@ -267,16 +284,16 @@ Publish-Subscribe
 This is **PubSub** pattern. It's very close to :ref:`aiozmq-rpc-pubsub`
 but has some difference:
 
-  * server *subscribes* to *topics* to recive messages from only that
+  * server *subscribes* to *topics* in order to receive messages only from that
     *topics*.
   * client sends a message to concrete *topic*.
 
 Let's assume we have *N* clients bound to *M* servers.  Any client can
-connect to several servers and any server can listen multiple
+connect to several servers and any server can listen to multiple
 *endpoints*.
 
-When client sends a message to *topic* the message will be delivered
-to only servers that has been subscibed to this *topic*.
+When client sends a message to *topic*, the message will be delivered
+to servers that only has been subscribed to this *topic*.
 
 This pair uses *PUB*/*SUB* :term:`ZeroMQ` sockets.
 
@@ -331,7 +348,7 @@ The basic usage is::
 
 
 .. function:: serve_pubsub(handler, *, connect=None, bind=None, subscribe=None,\
-              loop=None, translation_table=None)
+              loop=None, log_exceptions=False, translation_table=None)
 
     A :ref:`coroutine<coroutine>` that creates and connects/binds *pubsub*
     server instance.
@@ -345,27 +362,35 @@ The basic usage is::
 
       Usually you like to pass :class:`AttrHandler` instance.
 
-   :param subscribe: subscription specification.
+    :param bool log_exceptions:
+       log exceptions from remote calls if *True*
 
-      Subscribe server to *topics*.
+       .. seealso:: :ref:`aiozmq-rpc-log-exceptions`
 
-      Allowed parameters are :class:`str`, :class:`bytes`, *iterable* of
-      *str* or *bytes*.
+    :param subscribe: subscription specification.
 
-   :param dict translation_table:
-       an optional table for custom value translators.
+       Subscribe server to *topics*.
 
-       .. seealso:: :ref:`aiozmq-rpc-value-translators`
+       Allowed parameters are :class:`str`, :class:`bytes`, *iterable* of
+       *str* or *bytes*.
 
-   :return: :class:`PubSubService` instance.
-   :raises: :exc:`OSError` on system error.
-   :raises: :exc:`TypeError` if arguments have inappropriate type
+    :param dict translation_table:
+        an optional table for custom value translators.
 
-   .. seealso::
+        .. seealso:: :ref:`aiozmq-rpc-value-translators`
 
-      Please take a look on
-      :meth:`aiozmq.ZmqEventLoop.create_zmq_connection` for valid
-      values for *connect* and *bind* parameters.
+    :return: :class:`PubSubService` instance.
+    :raise OSError: on system error.
+    :raise TypeError: if arguments have inappropriate type
+
+    .. seealso::
+
+       Please take a look on
+       :meth:`aiozmq.ZmqEventLoop.create_zmq_connection` for valid
+       values for *connect* and *bind* parameters.
+
+   .. versionchanged:: 0.2
+      Added *log_exceptions* parameter.
 
 
 .. _aiozmq-rpc-exception-translation:
@@ -373,8 +398,8 @@ The basic usage is::
 Exception translation at client side
 ----------------------------------------
 
-If remote server method raises an exception that error is passed
-back to client and raised on client side, as follows::
+If a remote server method raises an exception, that exception is passed
+back to the client and raised on the client side, as follows::
 
     try:
         yield from client.call.func_raises_value_error()
@@ -425,11 +450,11 @@ that's up to you.
 Signature validation
 ------------------------
 
-The library supports **optional** validation of remote call signatures.
+The library supports **optional** validation of the remote call signatures.
 
-If validation fails then :exc:`ParameterError` raises on client side.
+If validation fails then :exc:`ParameterError` is raised on client side.
 
-All validations are done on RPC server side, than errors translated
+All validations are done on RPC server side, then errors are translated
 back to client.
 
 Let's take a look on example of user-defined RPC handler::
@@ -443,26 +468,29 @@ Let's take a look on example of user-defined RPC handler::
 *Parameter* *arg1* and *return value* has :term:`annotaions <annotaion>`,
 *int* and *float* correspondingly.
 
-At call time if *parameter* has an :term:`annotaion` then *actual
-value* passed to RPC method is calculated as ``actual_value =
-annotation(value)``. If there is no annotaion for parameter the value
+At the call time, if *parameter* has an :term:`annotaion`, then *actual
+value* passed and RPC method is calculated as ``actual_value =
+annotation(value)``. If there is no annotaion for parameter, the value
 is passed as-is.
+
+.. versionchanged:: 0.1.2
+   Function default values are not passed to an :term:`annotaion`.
 
 Annotaion should be any :term:`callable` that accepts a value as single argument
 and returns *actual value*.
 
-If annotation call raises exception that exception throws to client
+If annotation call raises exception, that exception is sent to the client
 wrapped in :exc:`ParameterError`.
 
 Value, returned by RPC call, can be checked by optional *return annotation*.
 
-Thus :class:`int` can be good annotation: it raises :exc:`TypeError`
+Thus :class:`int` can be a good annotation: it raises :exc:`TypeError`
 if *arg1* cannot be converted to *int*.
 
-Usually you need for more complex check, say parameter can be *int* or
+Usually you need more complex check, say parameter can be *int* or
 *None*.
 
-You always can write custom validator::
+You always can write a custom validator::
 
    def int_or_none(val):
       if isinstance(val, int) or val is None:
@@ -503,7 +531,7 @@ client to server and back.
 You can think about :term:`msgpack` as: this is a-like JSON but fast
 and compact.
 
-Every object that can be passed to :func:`json.dump` can be passed to
+Every object that can be passed to :func:`json.dump`, can be passed to
 :func:`msgpack.dump` also. The same for unpacking.
 
 The only difference is: *aiozmq.rpc* converts all :class:`lists
@@ -526,9 +554,9 @@ arguments.  :class:`datetime.datetime` is a good example.
 from :mod:`datetime` *from-the-box*
 (:ref:`predefined translators <aiozmq-rpc-predifined-translators>`).
 
-If you need to transfer a custom object via RPC you should to register
+If you need to transfer a custom object via RPC you should register
 **translator** at both server and client side.  Say, you need to pass
-instances of your custom class ``Point`` via RPC. There is an
+the instances of your custom class ``Point`` via RPC. There is an
 example::
 
     import asyncio
@@ -568,7 +596,7 @@ example::
         ret = yield from client.call.remote(Point(1, 2))
         assert ret == Point(1, 2)
 
-You should to create a *translation table* and pass it to both
+You should create a *translation table* and pass it to both
 :func:`connect_rpc` and :func:`serve_rpc`. That's all, server and
 client now have all information about passing your ``Point`` via the
 wire.
@@ -626,9 +654,9 @@ Table of predefined translators:
 +---------+-------------------------------+
 + 125     | :class:`datetime.time`        |
 +---------+-------------------------------+
-+ 126     | :class:`datetime.date`        |
++ 126     | :class:`datetime.datetime`    |
 +---------+-------------------------------+
-| 127     | :class:`datetime.datetime`    |
+| 127     | :class:`datetime.date`        |
 +---------+-------------------------------+
 
 .. note::
@@ -646,6 +674,28 @@ Table of predefined translators:
    instances.
 
 
+.. _aiozmq-rpc-log-exceptions:
+
+Logging exceptions from remote calls at server side
+---------------------------------------------------
+
+By default :mod:`aiozmq.rpc` does no logging if remote call raises an exception.
+
+That behavoir can be changed by passing ``log_exceptions=True`` to rpc
+servers: :func:`serve_rpc`, :func:`serve_pipeline` and
+:func:`serve_pubsub`.
+
+If, say, you make PubSub server as::
+
+   server =  yield from rpc.serve_pubsub(handler,
+                                         subscribe='topic',
+                                         bind='tcp://127.0.0.1:5555',
+                                         log_exceptions=True)
+
+then exceptions raised from *handler* remote calls will be logged by
+standard :attr:`aiozmq.rpc.logger`.
+
+
 Exceptions
 --------------
 
@@ -656,7 +706,7 @@ Exceptions
 .. exception:: GenericError
 
    Subclass of :exc:`Error`, raised when a remote call produces
-   exception which cannot be translated.
+   exception that cannot be translated.
 
    .. attribute:: exc_type
 
@@ -718,8 +768,8 @@ Clases
 
    The base class for all RPC handlers.
 
-   Every handler should to be *AbstractHandler* by direct inheritance
-   or indirect subclassing (method *__getitem__* should be defined.
+   Every handler should be *AbstractHandler* by direct inheritance
+   or indirect subclassing (method *__getitem__* should be defined).
 
    Therefore :class:`AttrHandler` and :class:`dict` are both good
    citizens.
@@ -887,24 +937,15 @@ Clases
    .. seealso::
       :ref:`aiozmq-rpc-signature-validation`
 
-.. class:: PubSubClient
 
-   Class that returned by :func:`connect_pubsub` call. Inherited from
-   :class:`Service`.
+Logger
+------
 
-   For *pubsub* calls use :attr:`~RPCClient.publish` method.
+.. data:: logger
 
-   .. method:: publish(topic)
+   An instance of :class:`logging.Logger` with *name* ``aiozmq.rpc``.
 
-      The call that returns ephemeral object used to making
-      *publisher call*.
-
-      Construction like::
-
-          ret = yield from client.publish('topic').ns.method(1, b=2)
-
-      makes a remote call with arguments ``(1, b=2)`` and topic name
-      ``b'topic'``
-
-   .. seealso::
-      :ref:`aiozmq-rpc-signature-validation`
+   The library sends log messages (:ref:`aiozmq-rpc-log-exceptions`
+   for example) to this logger. You can configure your own
+   :ref:`handlers <handler>` to fiter, save or what-you-wish the log
+   events from the library.

@@ -1,11 +1,14 @@
 import abc
 import asyncio
 import inspect
+import pprint
+import textwrap
 
 from aiozmq import interface
 from types import MethodType
 
 from .packer import _Packer
+from .log import logger
 
 
 class Error(Exception):
@@ -30,7 +33,7 @@ class ParametersError(Error, ValueError):
     be validated against their annotations."""
 
 
-class ServiceClosedError(Exception):
+class ServiceClosedError(Error):
     """RPC Service has been closed."""
 
 
@@ -142,11 +145,13 @@ class _BaseProtocol(interface.ZmqProtocol):
 
 class _BaseServerProtocol(_BaseProtocol):
 
-    def __init__(self, loop, handler, *, translation_table=None):
+    def __init__(self, loop, handler, *,
+                 translation_table=None, log_exceptions=False):
         super().__init__(loop, translation_table=translation_table)
-        self.handler = handler
         if not isinstance(handler, AbstractHandler):
             raise TypeError('handler should implement AbstractHandler ABC')
+        self.handler = handler
+        self.log_exceptions = log_exceptions
 
     def dispatch(self, name):
         if not name:
@@ -176,7 +181,7 @@ class _BaseServerProtocol(_BaseProtocol):
                 raise NotFoundError(name)
             return func
 
-    def _check_func_arguments(self, func, args, kwargs):
+    def check_args(self, func, args, kwargs):
         """Utility function for validating function arguments
 
         Returns validated (args, kwargs, return annotation) tuple
@@ -188,12 +193,13 @@ class _BaseServerProtocol(_BaseProtocol):
             raise ParametersError(repr(exc)) from exc
         else:
             arguments = bargs.arguments
+            marker = object()
             for name, param in sig.parameters.items():
                 if param.annotation is param.empty:
                     continue
-                val = arguments.get(name, param.default)
-                # NOTE: default value always being passed through annotation
-                #       is it realy neccessary?
+                val = arguments.get(name, marker)
+                if val is marker:
+                    continue  # Skip default value
                 try:
                     arguments[name] = param.annotation(val)
                 except (TypeError, ValueError) as exc:
@@ -203,3 +209,15 @@ class _BaseServerProtocol(_BaseProtocol):
             if sig.return_annotation is not sig.empty:
                 return bargs.args, bargs.kwargs, sig.return_annotation
             return bargs.args, bargs.kwargs, None
+
+    def try_log(self, fut, name, args, kwargs):
+        try:
+            fut.result()
+        except Exception:
+            if self.log_exceptions:
+                logger.exception(textwrap.dedent("""\
+                    An exception from method %r call has been occurred.
+                    args = %s
+                    kwargs = %s
+                    """),
+                    name, pprint.pformat(args), pprint.pformat(kwargs))  # noqa

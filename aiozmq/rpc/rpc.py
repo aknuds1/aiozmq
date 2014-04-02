@@ -13,7 +13,7 @@ import zmq
 from collections import ChainMap
 from functools import partial
 
-from aiozmq.log import logger
+from .log import logger
 
 from .base import (
     GenericError,
@@ -57,7 +57,7 @@ def connect_rpc(*, connect=None, bind=None, loop=None,
 
 @asyncio.coroutine
 def serve_rpc(handler, *, connect=None, bind=None, loop=None,
-              translation_table=None):
+              translation_table=None, log_exceptions=False):
     """A coroutine that creates and connects/binds RPC server instance."""
     # TODO: describe params
     # TODO: add a way to pass value translator
@@ -66,7 +66,8 @@ def serve_rpc(handler, *, connect=None, bind=None, loop=None,
 
     transp, proto = yield from loop.create_zmq_connection(
         lambda: _ServerProtocol(loop, handler,
-                                translation_table=translation_table),
+                                translation_table=translation_table,
+                                log_exceptions=log_exceptions),
         zmq.ROUTER, connect=connect, bind=bind)
     return Service(loop, proto)
 
@@ -105,8 +106,8 @@ class _ClientProtocol(_BaseProtocol):
             logger.critical("Unknown answer id: %d (%d %d %f %d) -> %s",
                             req_id, pid, rnd, timestamp, is_error, answer)
         elif call.cancelled():
-            logger.info("The future for %d has been cancelled, "
-                        "skip the received result.", req_id)
+            logger.debug("The future for request #%08x has been cancelled, "
+                         "skip the received result.", req_id)
         else:
             if is_error:
                 call.set_exception(self._translate_error(*answer))
@@ -171,8 +172,11 @@ class _ServerProtocol(_BaseServerProtocol):
     RESP_PREFIX = struct.Struct('=HH')
     RESP_SUFFIX = struct.Struct('=Ld?')
 
-    def __init__(self, loop, handler, *, translation_table=None):
-        super().__init__(loop, handler, translation_table=translation_table)
+    def __init__(self, loop, handler, *,
+                 translation_table=None, log_exceptions=False):
+        super().__init__(loop, handler,
+                         translation_table=translation_table,
+                         log_exceptions=log_exceptions)
         self.prefix = self.RESP_PREFIX.pack(os.getpid() % 0x10000,
                                             random.randrange(0x10000))
 
@@ -181,41 +185,43 @@ class _ServerProtocol(_BaseServerProtocol):
             peer, header, bname, bargs, bkwargs = data
             pid, rnd, req_id, timestamp = self.REQ.unpack(header)
 
+            name = bname.decode('utf-8')
             args = self.packer.unpackb(bargs)
             kwargs = self.packer.unpackb(bkwargs)
         except Exception as exc:
             logger.critical("Cannot unpack %r", data, exc_info=sys.exc_info())
             return
         try:
-            func = self.dispatch(bname.decode('utf-8'))
-            args, kwargs, ret_ann = self._check_func_arguments(
-                func, args, kwargs)
+            func = self.dispatch(name)
+            args, kwargs, ret_ann = self.check_args(func, args, kwargs)
         except (NotFoundError, ParametersError) as exc:
             fut = asyncio.Future(loop=self.loop)
             fut.add_done_callback(partial(self.process_call_result,
-                                          req_id=req_id, peer=peer))
+                                          req_id=req_id, peer=peer,
+                                          name=name, args=args, kwargs=kwargs))
             fut.set_exception(exc)
         else:
             if asyncio.iscoroutinefunction(func):
                 fut = asyncio.async(func(*args, **kwargs), loop=self.loop)
-                fut.add_done_callback(partial(self.process_call_result,
-                                              req_id=req_id, peer=peer,
-                                              return_annotation=ret_ann))
             else:
                 fut = asyncio.Future(loop=self.loop)
-                fut.add_done_callback(partial(self.process_call_result,
-                                              req_id=req_id, peer=peer,
-                                              return_annotation=ret_ann))
                 try:
                     fut.set_result(func(*args, **kwargs))
                 except Exception as exc:
                     fut.set_exception(exc)
+            fut.add_done_callback(partial(self.process_call_result,
+                                          req_id=req_id, peer=peer,
+                                          return_annotation=ret_ann,
+                                          name=name,
+                                          args=args,
+                                          kwargs=kwargs))
 
-    def process_call_result(self, fut, *, req_id, peer,
+    def process_call_result(self, fut, *, req_id, peer, name,
+                            args, kwargs,
                             return_annotation=None):
+        self.try_log(fut, name, args, kwargs)
         try:
             ret = fut.result()
-            # TODO: allow `ret` to be validated against None
             if return_annotation is not None:
                 ret = return_annotation(ret)
             prefix = self.prefix + self.RESP_SUFFIX.pack(req_id,

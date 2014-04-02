@@ -3,7 +3,7 @@ import zmq
 from functools import partial
 from collections import Iterable
 
-from ..log import logger
+from .log import logger
 from .base import (
     NotFoundError,
     ParametersError,
@@ -27,13 +27,14 @@ def connect_pubsub(*, connect=None, bind=None, loop=None,
 
 @asyncio.coroutine
 def serve_pubsub(handler, *, subscribe=None, connect=None, bind=None,
-                 loop=None, translation_table=None):
+                 loop=None, translation_table=None, log_exceptions=False):
     if loop is None:
         loop = asyncio.get_event_loop()
 
     transp, proto = yield from loop.create_zmq_connection(
         lambda: _ServerProtocol(loop, handler,
-                                translation_table=translation_table),
+                                translation_table=translation_table,
+                                log_exceptions=log_exceptions),
         zmq.SUB, connect=connect, bind=bind)
     serv = PubSubService(loop, proto)
     if subscribe is not None:
@@ -147,36 +148,27 @@ class _ServerProtocol(_BaseServerProtocol):
         try:
             name = bname.decode('utf-8')
             func = self.dispatch(name)
-            args, kwargs, ret_ann = self._check_func_arguments(
-                func, args, kwargs)
+            args, kwargs, ret_ann = self.check_args(func, args, kwargs)
         except (NotFoundError, ParametersError) as exc:
             fut = asyncio.Future(loop=self.loop)
-            fut.add_done_callback(partial(self.process_call_result,
-                                          name=name))
             fut.set_exception(exc)
         else:
             if asyncio.iscoroutinefunction(func):
                 fut = asyncio.async(func(*args, **kwargs), loop=self.loop)
-                fut.add_done_callback(partial(self.process_call_result,
-                                              name=name))
             else:
                 fut = asyncio.Future(loop=self.loop)
-                fut.add_done_callback(partial(self.process_call_result,
-                                              name=name))
                 try:
                     fut.set_result(func(*args, **kwargs))
                 except Exception as exc:
                     fut.set_exception(exc)
+        fut.add_done_callback(partial(self.process_call_result,
+                                      name=name, args=args, kwargs=kwargs))
 
-    def process_call_result(self, fut, *, name):
+    def process_call_result(self, fut, *, name, args, kwargs):
         try:
             if fut.result() is not None:
                 logger.warning("PubSub handler %r returned not None", name)
-        except Exception as exc:
-            self.loop.call_exception_handler({
-                'message': 'Call to {!r} caused error: {!r}'.format(name, exc),
-                'exception': exc,
-                'future': fut,
-                'protocol': self,
-                'transport': self.transport,
-                })
+        except (NotFoundError, ParametersError) as exc:
+            logger.exception("Call to %r caused error: %r", name, exc)
+        except Exception:
+            self.try_log(fut, name, args, kwargs)
