@@ -11,7 +11,7 @@ from collections import deque, Iterable
 
 from .selector import ZmqSelector
 from .interface import ZmqTransport
-from .utils import _EndpointsSet
+from .util import _EndpointsSet
 from .monitor import _FallbackMonitor, _TrueMonitor
 
 

@@ -8,7 +8,7 @@ import zmq
 
 from ipaddress import ip_address
 
-from .utils import _EndpointsSet
+from .util import _EndpointsSet
 
 
 class AbstractMonitor(metaclass=abc.ABCMeta):
