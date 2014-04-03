@@ -388,14 +388,12 @@ class ZmqEventLoopTests(unittest.TestCase):
             self.loop.run_until_complete(connect())
 
     def test_getsockopt_badopt(self):
-        port = find_unused_port()
 
         @asyncio.coroutine
         def connect():
             tr, pr = yield from self.loop.create_zmq_connection(
                 lambda: Protocol(self.loop),
-                zmq.SUB,
-                connect='tcp://127.0.0.1:{}'.format(port))
+                zmq.SUB)
             yield from pr.connected
             return tr, pr
 
@@ -406,14 +404,12 @@ class ZmqEventLoopTests(unittest.TestCase):
         self.assertEqual(errno.EINVAL, ctx.exception.errno)
 
     def test_setsockopt_badopt(self):
-        port = find_unused_port()
 
         @asyncio.coroutine
         def connect():
             tr, pr = yield from self.loop.create_zmq_connection(
                 lambda: Protocol(self.loop),
-                zmq.SUB,
-                connect='tcp://127.0.0.1:{}'.format(port))
+                zmq.SUB)
             yield from pr.connected
             return tr, pr
 
@@ -447,21 +443,17 @@ class ZmqEventLoopTests(unittest.TestCase):
             self.assertEqual(errno.ENOENT, ctx.exception.errno)
             self.assertEqual({addr}, tr.bindings())
 
-        self.loop.run_until_complete(connect())
+        self.loop.run_until_complete(connect)
 
     def test_disconnect_from_nonbinded_addr(self):
-        port = find_unused_port()
-        addr = 'tcp://127.0.0.1:{}'.format(port)
-
         @asyncio.coroutine
         def go():
             tr, pr = yield from self.loop.create_zmq_connection(
                 lambda: Protocol(self.loop),
-                zmq.SUB,
-                connect=addr)
+                zmq.SUB)
             yield from pr.connected
 
-            self.assertEqual({addr}, tr.connections())
+            self.assertFalse(tr.connections())
             with self.assertRaises(OSError) as ctx:
                 yield from tr.disconnect('ipc:///some-addr')  # non-bound addr
 
@@ -471,7 +463,7 @@ class ZmqEventLoopTests(unittest.TestCase):
                 raise unittest.SkipTest("Travis has a bug, it returns "
                                         "EAGAIN for unknown endpoint")
             self.assertEqual(errno.ENOENT, ctx.exception.errno)
-            self.assertEqual({addr}, tr.connections())
+            self.assertFalse(tr.connections())
 
         self.loop.run_until_complete(go())
 

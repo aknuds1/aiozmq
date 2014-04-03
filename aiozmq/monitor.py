@@ -140,23 +140,19 @@ class _FallbackMonitor(AbstractMonitor):
 
 class _TrueMonitor(_FallbackMonitor):
 
-    EVENTS = zmq.EVENT_CONNECTED #| zmq.EVENT_DISCONNECTED
+    EVENTS = zmq.EVENT_CONNECTED  # | zmq.EVENT_DISCONNECTED
     EVENT_STRUCT = struct.Struct('=HL')
 
     def __init__(self, loop, transport):
         super().__init__(loop, transport)
 
-        self._monitor_sock = self._zmq_sock.get_monitor_socket()
+        self._monitor_sock = self._zmq_sock.get_monitor_socket(self.EVENTS)
         self._loop.add_reader(self._monitor_sock, self._read_ready)
         self._waiters = {}
 
     def _read_ready(self):
         try:
             try:
-                ready = self._monitor_sock.getsockopt(zmq.EVENTS)
-                if ready != zmq.POLLIN:
-                    print('!', end='')
-                    return
                 bdata, bendpoint = self._monitor_sock.recv_multipart(
                     zmq.NOBLOCK)
             except zmq.ZMQError as exc:
@@ -166,14 +162,11 @@ class _TrueMonitor(_FallbackMonitor):
                     raise OSError(exc.errno, exc.strerror) from exc
             else:
                 event, fd = self.EVENT_STRUCT.unpack(bdata)
-                # value = self.EVENT_STRUCT.unpack(bvalue)
                 # FIXME: actually should be fsdecode
                 endpoint = bendpoint.decode('utf-8')
-                print(EVENT_NAMES[event], fd, endpoint)
+                # print(EVENT_NAMES[event], fd, endpoint)
                 if event != zmq.EVENT_CONNECTED:
                     return
-                #name = self._find_sockname(fd)
-                #print(name)
                 fut = self._waiters.pop(endpoint, None)
                 if fut is None:
                     self._loop.call_exception_handler({
@@ -185,16 +178,12 @@ class _TrueMonitor(_FallbackMonitor):
                 if fut.cancelled():
                     self._loop.call_exception_handler({
                         'message': ('Future for endpoint {} from monitor '
-                                    'has been cancelled'.format(
-                                    endpoint)),
+                                    'has been cancelled'.format(endpoint)),
                         'transport': self._transport,
                         })
                     return
-                #if event == zmq.EVENT_CONNECTED:
                 self._connections.add(endpoint)
                 fut.set_result(endpoint)
-                #elif event == zmq.EVENT_DISCONNECTED:
-                #    self._connections.discard(name)
         except Exception as exc:
             self._loop.call_exception_handler({
                 'message': 'Unknown exception from monitor',
@@ -215,11 +204,16 @@ class _TrueMonitor(_FallbackMonitor):
         super().close()
 
     def connect(self, endpoint):
+        try:
+            self._validate_endpoint_type(endpoint)
+        except Exception as exc:
+            fut = asyncio.Future(loop=self._loop)
+            fut.set_exception(exc)
+            return fut
         if not endpoint.startswith(('ipc://', 'tcp://')):
             return super().connect(endpoint)
         fut = asyncio.Future(loop=self._loop)
         try:
-            self._validate_endpoint_type(endpoint)
             self._validate_tcp_addr(endpoint)
             assert endpoint not in self._waiters
             self._waiters[endpoint] = fut

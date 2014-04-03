@@ -11,7 +11,7 @@ try:
 except ImportError:  # pragma: no cover
     from selectors import BaseSelector, SelectorKey, EVENT_READ, EVENT_WRITE
 from collections import Mapping
-from errno import EINTR
+from errno import EINTR, ENOTSOCK
 from zmq import (ZMQError, POLLIN, POLLOUT, POLLERR,
                  Socket as ZMQSocket, Poller as ZMQPoller)
 
@@ -186,6 +186,8 @@ class ZmqSelector(BaseSelector):
             z_events = self._poller.poll(timeout)
         except ZMQError as exc:
             if exc.errno == EINTR:
+                return ready
+            elif exc.errno == ENOTSOCK:
                 return ready
             else:
                 raise OSError(exc.errno, exc.strerror) from exc
