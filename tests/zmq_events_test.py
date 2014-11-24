@@ -704,7 +704,7 @@ class BaseZmqEventLoopTestsMixin:
             tr1.resume_reading()
         tr1.close()
 
-    @mock.patch('aiozmq.core.logger')
+    @mock.patch('aiozmq.basetransport.logger')
     def test_warning_on_connection_lost(self, m_log):
         port = find_unused_port()
         tr1, pr1 = self.loop.run_until_complete(aiozmq.create_zmq_connection(
