@@ -222,7 +222,7 @@ class _ZmqLooplessTransportImpl(BaseTransport):
             len(data), data
         ))
         try:
-            self._zmq_sock.send_multipart(data, zmq.DONTWAIT)
+            self._zmq_sock.send_multipart(data)
             if self._soon_call is None:
                 self._soon_call = self._loop.call_soon(self._read_ready)
             logger.debug('_ZmqLooplessTransportImpl: Successfully sent data')
