@@ -44,7 +44,7 @@ class PolicyTests(unittest.TestCase):
         self.policy.set_event_loop(None)
         self.assertRaises(AssertionError, self.policy.get_event_loop)
 
-    @mock.patch('aiozmq.core.threading.current_thread')
+    @mock.patch('aiozmq.eventloop.threading.current_thread')
     def test_get_event_loop_thread(self, m_current_thread):
 
         def f():

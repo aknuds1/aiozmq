@@ -101,6 +101,7 @@ def serve_rpc(handler, *, connect=None, bind=None, loop=None,
 
     """
     if loop is None:
+        logger.debug('Getting default event loop')
         loop = asyncio.get_event_loop()
 
     transp, proto = yield from create_zmq_connection(

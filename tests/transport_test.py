@@ -8,7 +8,8 @@ import errno
 from collections import deque
 
 from asyncio import test_utils
-from aiozmq.core import _ZmqTransportImpl, _ZmqLooplessTransportImpl
+from aiozmq.core import _ZmqLooplessTransportImpl
+from aiozmq.eventloop import _ZmqTransportImpl
 from unittest import mock
 
 from aiozmq._test_util import check_errno
