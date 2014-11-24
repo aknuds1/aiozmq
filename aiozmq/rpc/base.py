@@ -128,11 +128,14 @@ class Service(asyncio.AbstractServer):
 
     @asyncio.coroutine
     def wait_closed(self):
+        logger.debug('Service: Waiting for protocol to close')
         if self._proto.transport is None:
+            logger.debug('Service: Protocol has already closed')
             return
         waiter = asyncio.Future(loop=self._loop)
         self._proto.done_waiters.append(waiter)
         yield from waiter
+        logger.debug('Service: Protocol has closed')
 
 
 class _BaseProtocol(interface.ZmqProtocol):
@@ -170,14 +173,21 @@ class _BaseServerProtocol(_BaseProtocol):
         self.timeout = timeout
 
     def connection_lost(self, exc):
+        logger.debug('_BaseServerProtocol: Connection lost')
         super().connection_lost(exc)
         for waiter in list(self.pending_waiters):
             if not waiter.cancelled():
+                logger.debug(
+                    '_BaseServerProtocol: Canceling waiter {}'.format(waiter)
+                )
                 waiter.cancel()
 
     def dispatch(self, name):
         if not name:
             raise NotFoundError(name)
+
+        logger.debug('_BaseServerProtocol: Dispatching {}'.format(name))
+
         namespaces, sep, method = name.rpartition('.')
         handler = self.handler
         if namespaces:
@@ -190,9 +200,14 @@ class _BaseServerProtocol(_BaseProtocol):
                     if not isinstance(handler, AbstractHandler):
                         raise NotFoundError(name)
 
+        logger.debug(
+            '_BaseServerProtocol: Getting method {} on handler {!r}'.format(
+                method, handler
+            ))
         try:
             func = handler[method]
         except KeyError:
+            logger.warn('Method {} not found'.format(method))
             raise NotFoundError(name)
         else:
             if isinstance(func, MethodType):
@@ -249,9 +264,15 @@ class _BaseServerProtocol(_BaseProtocol):
                     pprint.pformat(args), pprint.pformat(kwargs))  # noqa
 
     def add_pending(self, coro):
+        logger.debug(
+            '_BaseServerProtocol: Adding pending waiter {!r}'.format(coro)
+        )
         fut = asyncio.async(coro, loop=self.loop)
         self.pending_waiters.add(fut)
         return fut
 
     def discard_pending(self, fut):
+        logger.debug(
+            '_BaseServerProtocol: Discarding pending waiter {!r}'.format(fut)
+        )
         self.pending_waiters.discard(fut)

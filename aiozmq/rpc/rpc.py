@@ -63,12 +63,15 @@ def connect_rpc(*, connect=None, bind=None, loop=None,
     Returns a RPCClient instance.
     """
     if loop is None:
+        logger.debug('connect_rpc: Getting default event loop')
         loop = asyncio.get_event_loop()
 
+    logger.debug('connect_rpc: Connecting...')
     transp, proto = yield from create_zmq_connection(
         lambda: _ClientProtocol(loop, error_table=error_table,
                                 translation_table=translation_table),
         zmq.DEALER, connect=connect, bind=bind, loop=loop)
+    logger.debug('connect_rpc: Connected')
     return RPCClient(loop, proto, timeout=timeout)
 
 
@@ -101,9 +104,10 @@ def serve_rpc(handler, *, connect=None, bind=None, loop=None,
 
     """
     if loop is None:
-        logger.debug('Getting default event loop')
+        logger.debug('serve_rpc: Getting default event loop')
         loop = asyncio.get_event_loop()
 
+    logger.debug('serve_rpc: Connecting...')
     transp, proto = yield from create_zmq_connection(
         lambda: _ServerProtocol(loop, handler,
                                 translation_table=translation_table,
@@ -111,6 +115,7 @@ def serve_rpc(handler, *, connect=None, bind=None, loop=None,
                                 exclude_log_exceptions=exclude_log_exceptions,
                                 timeout=timeout),
         zmq.ROUTER, connect=connect, bind=bind, loop=loop)
+    logger.debug('serve_rpc: Connected')
     return Service(loop, proto)
 
 
@@ -136,6 +141,7 @@ class _ClientProtocol(_BaseProtocol):
             self.error_table = ChainMap(error_table, _default_error_table)
 
     def msg_received(self, data):
+        logger.debug('_ClientProtocol: Message received: {}'.format(data))
         try:
             header, banswer = data
             pid, rnd, req_id, timestamp, is_error = self.RESP.unpack(header)
@@ -143,6 +149,7 @@ class _ClientProtocol(_BaseProtocol):
         except Exception:
             logger.critical("Cannot unpack %r", data, exc_info=sys.exc_info())
             return
+        logger.debug('_ClientProtocol: Request ID: {}'.format(req_id))
         call = self.calls.pop(req_id, None)
         if call is None:
             logger.critical("Unknown answer id: %d (%d %d %f %d) -> %s",
@@ -152,14 +159,27 @@ class _ClientProtocol(_BaseProtocol):
                          "skip the received result.", req_id)
         else:
             if is_error:
-                call.set_exception(self._translate_error(*answer))
+                exc = self._translate_error(*answer)
+                logger.debug(
+                    '_ClientProtocol: Call {} resulted in an exception: {}'
+                    .format(call, exc)
+                )
+                call.set_exception(exc)
             else:
+                logger.debug(
+                    '_ClientProtocol: Call {} was successful: {}'
+                    .format(call, answer)
+                )
                 call.set_result(answer)
 
     def connection_lost(self, exc):
+        logger.debug('_ClientProtocol: Connection lost')
         super().connection_lost(exc)
         for call in self.calls.values():
             if not call.cancelled():
+                logger.debug('_ClientProtocol: Canceling call {}'.format(
+                    call
+                ))
                 call.cancel()
 
     def _translate_error(self, exc_type, exc_args, exc_repr):
@@ -179,13 +199,20 @@ class _ClientProtocol(_BaseProtocol):
     def call(self, name, args, kwargs):
         if self.transport is None:
             raise ServiceClosedError()
+        logger.debug('_ClientProtocol: Making call to {}'.format(name))
         bname = name.encode('utf-8')
         bargs = self.packer.packb(args)
         bkwargs = self.packer.packb(kwargs)
         header, req_id = self._new_id()
         assert req_id not in self.calls, (req_id, self.calls)
         fut = asyncio.Future(loop=self.loop)
+        logger.debug(
+            '_ClientProtocol: Registering future corr. to call with req. ID {}'
+            .format(req_id))
         self.calls[req_id] = fut
+        logger.debug(
+            '_ClientProtocol: Writing to transport'
+        )
         self.transport.write([header, bname, bargs, bkwargs])
         return fut
 
@@ -236,6 +263,8 @@ class _ServerProtocol(_BaseServerProtocol):
                                             random.randrange(0x10000))
 
     def msg_received(self, data):
+        logger.debug(
+            '_ServerProtocol: Received message: {}'.format(data))
         try:
             *pre, header, bname, bargs, bkwargs = data
             pid, rnd, req_id, timestamp = self.REQ.unpack(header)
@@ -246,10 +275,24 @@ class _ServerProtocol(_BaseServerProtocol):
         except Exception as exc:
             logger.critical("Cannot unpack %r", data, exc_info=sys.exc_info())
             return
+        logger.debug(
+            '_ServerProtocol: Calling func {} with args {}, kwargs {}'
+            .format(name, args, kwargs)
+        )
         try:
             func = self.dispatch(name)
             args, kwargs, ret_ann = self.check_args(func, args, kwargs)
         except (NotFoundError, ParametersError) as exc:
+            if isinstance(exc, NotFoundError):
+                logger.warning(
+                    '_ServerProtocol: Couldn\'t find function {}'.format(name)
+                )
+            else:
+                logger.warning(
+                    '_ServerProtocol: Erroneous parameters to {}: {}, {}'
+                    .format(name, args, kwargs)
+                )
+
             fut = asyncio.Future(loop=self.loop)
             fut.add_done_callback(partial(self.process_call_result,
                                           req_id=req_id, pre=pre,
@@ -257,8 +300,13 @@ class _ServerProtocol(_BaseServerProtocol):
             fut.set_exception(exc)
         else:
             if asyncio.iscoroutinefunction(func):
+                logger.debug(
+                    '_ServerProtocol: Calling RPC method - coroutine function')
                 fut = self.add_pending(func(*args, **kwargs))
             else:
+                logger.debug(
+                    '_ServerProtocol: Calling RPC method - synchronous function'
+                )
                 fut = asyncio.Future(loop=self.loop)
                 try:
                     fut.set_result(func(*args, **kwargs))
@@ -274,6 +322,10 @@ class _ServerProtocol(_BaseServerProtocol):
     def process_call_result(self, fut, *, req_id, pre, name,
                             args, kwargs,
                             return_annotation=None):
+        logger.debug(
+            '_ServerProtocol: Processing call result, request {}'.format(
+                req_id
+            ))
         self.discard_pending(fut)
         self.try_log(fut, name, args, kwargs)
         if self.transport is None:
@@ -284,13 +336,25 @@ class _ServerProtocol(_BaseServerProtocol):
                 ret = return_annotation(ret)
             prefix = self.prefix + self.RESP_SUFFIX.pack(req_id,
                                                          time.time(), False)
+            logger.debug(
+                '_ServerProtocol: Result is {}, writing response, '
+                'pre: {}, prefix: {} '.format(
+                    ret, pre, prefix
+                ))
             self.transport.write(pre + [prefix, self.packer.packb(ret)])
         except asyncio.CancelledError:
+            logger.debug('_ServerProtocol: Cancelled write')
             return
         except Exception as exc:
+            logger.debug('_ServerProtocol: Write failed, exception: {}'.format(
+                exc))
             prefix = self.prefix + self.RESP_SUFFIX.pack(req_id,
                                                          time.time(), True)
             exc_type = exc.__class__
             exc_info = (exc_type.__module__ + '.' + exc_type.__qualname__,
                         exc.args, repr(exc))
+            logger.debug(
+                '_ServerProtocol: Writing exception, pre: {}, prefix: {}'
+                .format(pre, prefix)
+            )
             self.transport.write(pre + [prefix, self.packer.packb(exc_info)])

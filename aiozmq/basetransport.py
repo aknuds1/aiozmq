@@ -75,6 +75,10 @@ class BaseTransport(ZmqTransport):
                                 'byte-ish (%r)' % data)
         data_len = sum(len(part) for part in data)
 
+        logger.debug('Transport: Writing data, {} byte(s)'.format(
+            data_len
+        ))
+
         if self._conn_lost:
             if self._conn_lost >= self.LOG_THRESHOLD_FOR_CONNLOST_WRITES:
                 logger.warning('write to closed ZMQ socket.')
@@ -82,6 +86,7 @@ class BaseTransport(ZmqTransport):
             return
 
         if not self._buffer:
+            logger.debug('Transport: Have no buffer, sending data immediately')
             try:
                 if self._do_send(data):
                     return
@@ -98,10 +103,14 @@ class BaseTransport(ZmqTransport):
         return False
 
     def abort(self):
+        logger.debug('Transport: Aborting')
         self._force_close(None)
 
     def _fatal_error(self, exc, message='Fatal error on transport'):
         # Should be called from exception handler only.
+        logger.warning('Transport: Fatal error: {}, {}'.format(
+            exc, message
+        ))
         self._loop.call_exception_handler({
             'message': message,
             'exception': exc,
@@ -111,6 +120,7 @@ class BaseTransport(ZmqTransport):
         self._force_close(exc)
 
     def _call_connection_lost(self, exc):
+        logger.debug('Transport: Connection lost: {}'.format(exc))
         try:
             self._protocol.connection_lost(exc)
         finally:
@@ -125,10 +135,14 @@ class BaseTransport(ZmqTransport):
         if size <= self._high_water:
             return
         if not self._protocol_paused:
+            logger.debug('Transport: Pausing protocol')
             self._protocol_paused = True
             try:
                 self._protocol.pause_writing()
             except Exception as exc:
+                logger.warning('Transport: Pausing protocol failed: {}'.format(
+                    exc
+                ))
                 self._loop.call_exception_handler({
                     'message': 'protocol.pause_writing() failed',
                     'exception': exc,
@@ -139,10 +153,14 @@ class BaseTransport(ZmqTransport):
     def _maybe_resume_protocol(self):
         if (self._protocol_paused and
                 self.get_write_buffer_size() <= self._low_water):
+            logger.debug('Transport: Resuming protocol')
             self._protocol_paused = False
             try:
                 self._protocol.resume_writing()
             except Exception as exc:
+                logger.warning('Transport: Resuming protocol failed: {}'.format(
+                    exc
+                ))
                 self._loop.call_exception_handler({
                     'message': 'protocol.resume_writing() failed',
                     'exception': exc,
@@ -176,12 +194,14 @@ class BaseTransport(ZmqTransport):
             raise RuntimeError('Cannot pause_reading() when closing')
         if self._paused:
             raise RuntimeError('Already paused')
+        logger.debug('Transport: Pausing reading')
         self._paused = True
         self._do_pause_reading()
 
     def resume_reading(self):
         if not self._paused:
             raise RuntimeError('Not paused')
+        logger.debug('Transport: Resuming reading')
         self._paused = False
         if self._closing:
             return
@@ -244,6 +264,9 @@ class BaseTransport(ZmqTransport):
             if not isinstance(endpoint, str):
                 raise TypeError('endpoint should be str, got {!r}'
                                 .format(endpoint))
+            logger.debug('Transport: Unbinding endpoint {}'.format(
+                endpoint
+            ))
             try:
                 self._zmq_sock.unbind(endpoint)
             except zmq.ZMQError as exc:
@@ -268,6 +291,9 @@ class BaseTransport(ZmqTransport):
             match = self._TCP_RE.match(endpoint)
             if match:
                 ip_address(match.group(1))  # check for correct IPv4 or IPv6
+            logger.debug('Transport: Connecting to endpoint {}'.format(
+                endpoint
+            ))
             try:
                 self._zmq_sock.connect(endpoint)
             except zmq.ZMQError as exc:
@@ -285,6 +311,9 @@ class BaseTransport(ZmqTransport):
             if not isinstance(endpoint, str):
                 raise TypeError('endpoint should be str, got {!r}'
                                 .format(endpoint))
+            logger.debug('Transport: Disconnecting from endpoint {}'.format(
+                endpoint
+            ))
             try:
                 self._zmq_sock.disconnect(endpoint)
             except zmq.ZMQError as exc:

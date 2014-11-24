@@ -214,6 +214,9 @@ class _ZmqLooplessTransportImpl(BaseTransport):
                     self._soon_call = self._loop.call_soon(self._read_ready)
 
     def _do_send(self, data):
+        logger.debug('Transport: Sending {} byte(s) of data'.format(
+            len(data)
+        ))
         try:
             self._zmq_sock.send_multipart(data, zmq.DONTWAIT)
             if self._soon_call is None:
