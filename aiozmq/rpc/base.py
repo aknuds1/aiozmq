@@ -121,6 +121,7 @@ class Service(asyncio.AbstractServer):
     def close(self):
         if self._proto.closing:
             return
+        logger.debug('Service: Closing')
         self._proto.closing = True
         if self._proto.transport is None:
             return

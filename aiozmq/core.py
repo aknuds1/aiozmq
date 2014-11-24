@@ -166,6 +166,10 @@ class _ZmqLooplessTransportImpl(BaseTransport):
                 if exc.errno in (errno.EAGAIN, errno.EINTR):
                     return
                 else:
+                    logger.debug(
+                        '_ZmqLooplessTransportImpl: Got unexpected exception '
+                        'reading from socket: {}'.format(exc)
+                    )
                     raise OSError(exc.errno, exc.strerror) from exc
         except Exception as exc:
             self._fatal_error(exc, 'Fatal read error on zmq socket transport')
@@ -214,18 +218,26 @@ class _ZmqLooplessTransportImpl(BaseTransport):
                     self._soon_call = self._loop.call_soon(self._read_ready)
 
     def _do_send(self, data):
-        logger.debug('Transport: Sending {} byte(s) of data'.format(
-            len(data)
+        logger.debug('Transport: Sending {} data part(s): {}'.format(
+            len(data), data
         ))
         try:
             self._zmq_sock.send_multipart(data, zmq.DONTWAIT)
             if self._soon_call is None:
                 self._soon_call = self._loop.call_soon(self._read_ready)
+            logger.debug('_ZmqLooplessTransportImpl: Successfully sent data')
             return True
         except zmq.ZMQError as exc:
+            logger.debug('_ZmqLooplessTransportImpl: Socket send failed')
             if exc.errno not in (errno.EAGAIN, errno.EINTR):
+                logger.warning(
+                    '_ZmqLooplessTransportImpl: Unexpected exception: {}'
+                    .format(exc)
+                )
                 raise OSError(exc.errno, exc.strerror) from exc
             else:
+                logger.debug(
+                    '_ZmqLooplessTransportImpl: Will have to retry send')
                 if self._soon_call is None:
                     self._soon_call = self._loop.call_soon(self._read_ready)
                 return False
@@ -233,7 +245,7 @@ class _ZmqLooplessTransportImpl(BaseTransport):
     def close(self):
         if self._closing:
             return
-        logger.debug('Transport: Closing')
+        logger.debug('_ZmqLooplessTransportImpl: Closing')
         self._closing = True
         if not self._buffer:
             self._conn_lost += 1
@@ -242,6 +254,7 @@ class _ZmqLooplessTransportImpl(BaseTransport):
             self._loop.call_soon(self._call_connection_lost, None)
 
     def _force_close(self, exc):
+        logger.debug('_ZmqLooplessTransportImpl: Forcing close')
         if self._conn_lost:
             return
         if self._buffer:
@@ -256,6 +269,7 @@ class _ZmqLooplessTransportImpl(BaseTransport):
         pass
 
     def _do_resume_reading(self):
+        logger.debug('_ZmqLooplessTransportImpl: Resuming reading')
         self._read_ready()
 
     def _call_connection_lost(self, exc):
