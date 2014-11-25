@@ -267,6 +267,9 @@ class _ServerProtocol(_BaseServerProtocol):
             '_ServerProtocol: Received message: {}'.format(data))
         try:
             *pre, header, bname, bargs, bkwargs = data
+            logger.debug(
+                '_ServerProtocol: pre: {}, header: {}, bname: {}, bargs: {}, '
+                'bkwargs: {}'.format(pre, header, bname, bargs, bkwargs))
             pid, rnd, req_id, timestamp = self.REQ.unpack(header)
 
             name = bname.decode('utf-8')

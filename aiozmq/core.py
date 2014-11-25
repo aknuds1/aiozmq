@@ -74,6 +74,12 @@ def create_zmq_connection(protocol_factory, zmq_type, *,
         if zmq_sock is None:
             logger.debug('Creating socket of type {}'.format(zmq_type))
             zmq_sock = zmq.Context().instance().socket(zmq_type)
+            if zmq_type == zmq.ROUTER:
+                logger.debug(
+                    'create_zmq_connection: Setting ROUTER_MANDATORY option '
+                    'on created socket'
+                )
+                zmq_sock.setsockopt(zmq.ROUTER_MANDATORY, 1)
         elif zmq_sock.getsockopt(zmq.TYPE) != zmq_type:
             raise ValueError('Invalid zmq_sock type')
     except zmq.ZMQError as exc:
@@ -128,20 +134,21 @@ class _ZmqLooplessTransportImpl(BaseTransport):
         self._soon_call = None
 
     def _read_ready(self):
-        logger.debug('Transport ready to read from ZMQ socket')
+        logger.debug(
+            'Transport ready to read from ZMQ socket; paused: {}'
+            .format(self._paused)
+        )
         self._soon_call = None
         if self._zmq_sock is None:
+            logger.debug(
+                '_ZmqLooplessTransportImpl: Have no socket, returning')
             return
         events = self._zmq_sock.getsockopt(zmq.EVENTS)
         try_again = False
         if not self._paused and events & zmq.POLLIN:
-            logger.debug(
-                'Transport: Input detected on socket')
             self._do_read()
             try_again = True
         if self._buffer and events & zmq.POLLOUT:
-            logger.debug(
-                'Transport: Socket can be written to')
             self._do_write()
             if not try_again:
                 try_again = bool(self._buffer)
@@ -183,7 +190,9 @@ class _ZmqLooplessTransportImpl(BaseTransport):
     def _do_write(self):
         if not self._buffer:
             return
-        logger.debug('Transport: Writing to ZMQ socket')
+        logger.debug('Transport: Writing to ZMQ socket: {!r}'.format(
+            self._buffer[0][1]
+        ))
         try:
             try:
                 self._zmq_sock.send_multipart(self._buffer[0][1], zmq.DONTWAIT)
