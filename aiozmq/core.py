@@ -195,7 +195,8 @@ class _ZmqLooplessTransportImpl(BaseTransport):
         ))
         try:
             try:
-                self._zmq_sock.send_multipart(self._buffer[0][1], zmq.DONTWAIT)
+                send_ret = self._zmq_sock.send_multipart(
+                    self._buffer[0][1], zmq.DONTWAIT)
             except zmq.ZMQError as exc:
                 if exc.errno in (errno.EAGAIN, errno.EINTR):
                     if self._soon_call is None:
@@ -209,9 +210,10 @@ class _ZmqLooplessTransportImpl(BaseTransport):
                               'Fatal write error on zmq socket transport')
         else:
             sent_len, sent_data = self._buffer.popleft()
-            logger.debug('Transport: Sent {} byte(s) over socket'.format(
-                sent_len
-            ))
+            logger.debug(
+                'Transport: Sent {} byte(s) over socket, return: {}'
+                .format(sent_len, send_ret)
+            )
             self._buffer_size -= sent_len
 
             self._maybe_resume_protocol()
@@ -231,10 +233,13 @@ class _ZmqLooplessTransportImpl(BaseTransport):
             len(data), data
         ))
         try:
-            self._zmq_sock.send_multipart(data)
+            send_ret = self._zmq_sock.send_multipart(data, zmq.DONTWAIT)
             if self._soon_call is None:
                 self._soon_call = self._loop.call_soon(self._read_ready)
-            logger.debug('_ZmqLooplessTransportImpl: Successfully sent data')
+            logger.debug(
+                '_ZmqLooplessTransportImpl: Successfully sent data, return: {}'
+                .format(send_ret)
+            )
             return True
         except zmq.ZMQError as exc:
             logger.debug('_ZmqLooplessTransportImpl: Socket send failed')
