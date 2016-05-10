@@ -109,7 +109,7 @@ The basic usage is::
     :param float timeout: an optional timeout for RPC calls. If
        *timeout* is not *None* and remote call takes longer than
        *timeout* seconds then :exc:`asyncio.TimeoutError` will be raised
-       at client side. If the server will return an answer after timeout
+       on client side. If the server will return an answer after timeout
        has been raised that answer **is ignored**.
 
        .. seealso:: :meth:`RPCClient.with_timeout` method.
@@ -413,7 +413,7 @@ The basic usage is::
 
 .. _aiozmq-rpc-exception-translation:
 
-Exception translation at client side
+Exception translation on client side
 ====================================
 
 If a remote server method raises an exception, that exception is passed
@@ -916,7 +916,7 @@ Classes
       :param float timeout: a timeout for RPC calls. If
          *timeout* is not *None* and remote call takes longer than
          *timeout* seconds then :exc:`asyncio.TimeoutError` will be raised
-         at client side. If the server will return an answer after timeout
+         on client side. If the server will return an answer after timeout
          has been raised that answer **is ignored**.
 
          .. seealso:: :func:`connect_rpc` coroutine.
