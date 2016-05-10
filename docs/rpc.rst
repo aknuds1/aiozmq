@@ -774,7 +774,7 @@ Exceptions
       :attr:`Service.transport` property.
 
 
-Clases
+Classes
 ======
 
 .. decorator:: method
